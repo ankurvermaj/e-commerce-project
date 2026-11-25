@@ -70,6 +70,11 @@ async def ensure_indexes(client: AsyncIOMotorClient) -> bool:
 
     order_db = client[ORDER_DB_NAME]
     await order_db["orders"].create_index("order_id", unique=True)
+    await order_db["orders"].create_index(
+        [("user_id", 1), ("idempotency_key", 1)],
+        unique=True,
+        partialFilterExpression={"idempotency_key": {"$type": "string"}},
+    )
     await order_db["orders"].create_index("user_id")
     await order_db["orders"].create_index([("status", 1), ("created_at", -1)])
     await order_db["orders"].create_index("items.product_id")

@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ticket-service
+  namespace: ecom-microservices
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ticket-service
+  template:
+    metadata:
+      labels:
+        app: ticket-service
+    spec:
+      containers:
+        - name: ticket-service
+          image: backend-ticket_service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8008
+          env:
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: ecommerce-secrets
+                  key: MONGO_URI
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ecommerce-secrets
+                  key: SECRET_KEY
+            - name: TICKET_DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: TICKET_DB_NAME
+            - name: ALGORITHM
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: ALGORITHM
+

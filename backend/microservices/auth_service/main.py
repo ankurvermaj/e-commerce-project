@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 import bcrypt
+import uuid
 
 from jose import jwt, JWTError, ExpiredSignatureError
 
@@ -150,7 +151,7 @@ async def register(data: RegisterRequest):
             detail="Email already registered"
         )
 
-    new_user_id = await next_sequence(counters_collection, "user_id")
+    new_user_id = str(uuid.uuid4())
 
     user = {
         "user_id": new_user_id,
