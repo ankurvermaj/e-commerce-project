@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin-service
+  namespace: ecom-microservices
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: admin-service
+  template:
+    metadata:
+      labels:
+        app: admin-service
+    spec:
+      containers:
+        - name: admin-service
+          image: backend-admin_service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8005
+          env:
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: ecommerce-secrets
+                  key: MONGO_URI
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ecommerce-secrets
+                  key: SECRET_KEY
+            - name: PRODUCT_DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: PRODUCT_DB_NAME
+            - name: ORDER_DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: ORDER_DB_NAME
+            - name: AUTH_DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: AUTH_DB_NAME
+            - name: ALGORITHM
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: ALGORITHM
+

@@ -35,6 +35,9 @@ from microservices.common.config import (
 
 import httpx
 import uuid
+import hashlib
+import json
+from pymongo.errors import DuplicateKeyError
 
 
 @asynccontextmanager
@@ -42,6 +45,11 @@ async def lifespan(app: FastAPI):
     app.state.http = httpx.AsyncClient(
         timeout=httpx.Timeout(10.0, connect=2.0),
         limits=httpx.Limits(max_keepalive_connections=100, max_connections=200),
+    )
+    await order_collection.create_index(
+        [("user_id", 1), ("idempotency_key", 1)],
+        unique=True,
+        partialFilterExpression={"idempotency_key": {"$type": "string"}},
     )
     yield
     await app.state.http.aclose()
@@ -118,10 +126,35 @@ async def checkout(
     request_data: CheckoutRequest,
     raw_request: Request,
     user=Depends(get_current_user),
-    authorization: str = Header(...)
+    authorization: str = Header(...),
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
 ):
+    idempotency_key = idempotency_key.strip()
+    if not idempotency_key:
+        raise HTTPException(
+            status_code=400,
+            detail="Idempotency-Key header must not be empty",
+        )
 
     user_id = user["user_id"]
+    request_fingerprint = hashlib.sha256(
+        json.dumps(request_data.model_dump(), sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+    existing_order = await order_collection.find_one(
+        {"user_id": user_id, "idempotency_key": idempotency_key}
+    )
+    if existing_order:
+        if existing_order.get("request_fingerprint") != request_fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail="Idempotency-Key reused with a different checkout payload",
+            )
+        return {
+            "message": "Order placed successfully",
+            "order_id": existing_order["order_id"],
+        }
+
     client_http = raw_request.app.state.http
 
     try:
@@ -177,18 +210,36 @@ async def checkout(
 
     new_order_id = str(uuid.uuid4())
 
-    await order_collection.insert_one({
-        "order_id": new_order_id,
-        "user_id": user_id,
-        "email": user["email"],
-        "items": enriched_items,
-        "total": total,
-        "shipping_cost": shipping_tax,
-        "tax_cost": tax_amount,
-        "status": "pending",
-        "created_at": datetime.now(),
-        "shipping_details": request_data.model_dump()
-    })
+    try:
+        await order_collection.insert_one({
+            "order_id": new_order_id,
+            "user_id": user_id,
+            "email": user["email"],
+            "items": enriched_items,
+            "total": total,
+            "shipping_cost": shipping_tax,
+            "tax_cost": tax_amount,
+            "status": "pending",
+            "created_at": datetime.now(),
+            "shipping_details": request_data.model_dump(),
+            "idempotency_key": idempotency_key,
+            "request_fingerprint": request_fingerprint,
+        })
+    except DuplicateKeyError:
+        existing_order = await order_collection.find_one(
+            {"user_id": user_id, "idempotency_key": idempotency_key}
+        )
+        if existing_order:
+            if existing_order.get("request_fingerprint") != request_fingerprint:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Idempotency-Key reused with a different checkout payload",
+                )
+            return {
+                "message": "Order placed successfully",
+                "order_id": existing_order["order_id"],
+            }
+        raise
 
     try:
         await client_http.delete(
