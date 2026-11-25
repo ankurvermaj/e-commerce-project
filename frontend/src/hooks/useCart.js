@@ -64,7 +64,17 @@ export function useCart({ user, loadProducts, loadOrders }) {
         navigate("/profile");
         return;
       }
-      await api.post("/api/checkout", shippingDetails);
+      const storageKey = `checkout_idempotency_key_${user?.user_id || "anon"}`;
+      let idempotencyKey = sessionStorage.getItem(storageKey);
+      if (!idempotencyKey) {
+        idempotencyKey = crypto.randomUUID();
+        sessionStorage.setItem(storageKey, idempotencyKey);
+      }
+
+      await api.post("/api/checkout", shippingDetails, {
+        headers: { "Idempotency-Key": idempotencyKey },
+      });
+      sessionStorage.removeItem(storageKey);
       toast.success("Order Placed Successfully!");
       setCart([]);
       loadOrders();
